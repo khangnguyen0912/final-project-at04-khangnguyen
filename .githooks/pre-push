@@ -1,0 +1,35 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+while read -r local_ref local_sha remote_ref remote_sha; do
+  if [[ -z "${local_sha:-}" || "$local_sha" =~ ^0+$ ]]; then
+    continue
+  fi
+
+  if [[ -z "${remote_sha:-}" || "$remote_sha" =~ ^0+$ ]]; then
+    commit_range="$local_sha"
+  else
+    commit_range="$remote_sha..$local_sha"
+  fi
+
+  while read -r commit; do
+    mapfile -t changed_files < <(git diff-tree --no-commit-id --name-only -r "$commit")
+    [[ ${#changed_files[@]} -eq 0 ]] && continue
+
+    has_gitignore=false
+    for file in "${changed_files[@]}"; do
+      if [[ "$file" == ".gitignore" ]]; then
+        has_gitignore=true
+        break
+      fi
+    done
+
+    if [[ "$has_gitignore" == "true" && ${#changed_files[@]} -gt 1 ]]; then
+      echo "ERROR: commit $commit contains .gitignore with other files."
+      printf "Files in commit %s:\n" "$commit"
+      printf " - %s\n" "${changed_files[@]}"
+      echo "Please split .gitignore into a dedicated commit before pushing."
+      exit 1
+    fi
+  done < <(git rev-list "$commit_range")
+done
