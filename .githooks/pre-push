@@ -13,7 +13,10 @@ while read -r local_ref local_sha remote_ref remote_sha; do
   fi
 
   while read -r commit; do
-    mapfile -t changed_files < <(git diff-tree --no-commit-id --name-only -r "$commit")
+    	changed_files=()
+	while IFS= read -r f; do
+    		changed_files+=("$f")
+	done < <(git diff-tree --no-commit-id --name-only -r "$commit")
     [[ ${#changed_files[@]} -eq 0 ]] && continue
 
     has_gitignore=false

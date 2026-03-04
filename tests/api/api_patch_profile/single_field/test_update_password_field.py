@@ -16,6 +16,7 @@ pw_timeout = 3000
 
 
 def load_password_cases():
+    # Read password test cases from Excel file
     file_path = (
         Path(__file__).resolve().parents[4]
         / "data"
@@ -113,6 +114,7 @@ PASSWORD_CASES = load_password_cases()
 
 
 async def _try_get_access_token(api_request, email: str, password):
+    # Try login and return token when login is successful
     if password is None:
         return None
 
@@ -135,6 +137,7 @@ async def _try_get_access_token(api_request, email: str, password):
 
 
 def _resolve_password_old(password_old, account_state):
+    # Keep old password in sync with latest account_state
     current_password = account_state.get("password")
     if (
         isinstance(password_old, str)
@@ -142,12 +145,13 @@ def _resolve_password_old(password_old, account_state):
         and password_old == PASSWORD
         and current_password.strip()
     ):
-        # Keep "valid old password" cases stable after previous password changes.
+        # Keep "valid old password" cases stable after previous password changes
         return current_password
     return password_old
 
 
 async def _assert_login_result(api_request, email: str, password, expected_success: bool, case_name: str):
+    # Check login result matches expected success/fail
     token = await _try_get_access_token(api_request, email, password)
     actual_success = bool(token)
     assert actual_success == expected_success, (
@@ -175,6 +179,7 @@ async def test_update_profile_with_password_field_only(
     login_new_success,
     error_msg,
 ):
+    # Update password and verify both API response and login behavior
     current_email = account_state.get("email")
     current_password = account_state.get("password")
     if not current_email or not current_password:

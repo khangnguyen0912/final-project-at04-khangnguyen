@@ -16,6 +16,7 @@ pw_timeout = 3000
 
 
 def load_avatar_url_cases():
+    # Read avatarUrl test cases from Excel file
     file_path = (
         Path(__file__).resolve().parents[4]
         / "data"
@@ -102,6 +103,7 @@ async def test_update_profile_with_avatar_url_field_only(
     verify_others,
     error_msg,
 ):
+    # Update avatarUrl and verify API response and profile data
     api = APIs(api_request, access_token)
 
     allure.dynamic.title(case_name)

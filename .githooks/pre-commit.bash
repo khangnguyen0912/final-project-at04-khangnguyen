@@ -1,0 +1,27 @@
+#!/bin/bash
+set -euo pipefail
+
+staged_files=()
+while IFS= read -r f; do
+  staged_files+=("$f")
+done < <(git diff --cached --name-only --diff-filter=ACMR)
+
+if [[ ${#staged_files[@]} -eq 0 ]]; then
+  exit 0
+fi
+
+has_gitignore=false
+for file in "${staged_files[@]}"; do
+  if [[ "$file" == ".gitignore" ]]; then
+    has_gitignore=true
+    break
+  fi
+done
+
+if [[ "$has_gitignore" == "true" && ${#staged_files[@]} -gt 1 ]]; then
+  echo "ERROR: .gitignore must be committed alone."
+  echo "Currently staged files:"
+  printf " - %s\n" "${staged_files[@]}"
+  echo "Please commit .gitignore in a separate commit."
+  exit 1
+fi

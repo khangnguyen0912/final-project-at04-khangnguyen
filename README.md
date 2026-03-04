@@ -20,6 +20,7 @@ API_BASE_URL=https://book.anhtester.com/
 BASE_URL=https://book.anhtester.com/
 EMAIL=mkhang0995.it@gmail.com
 PASSWORD=Kh@ng_qa1234
+UI_SLOW_MO=1000
 ```
 
 ## 2. Test folders

@@ -17,6 +17,7 @@ pw_timeout = 3000
 RANDOM_EMAIL_PLACEHOLDER = "{{random_generated_email}}"
 
 def load_email_cases():
+    # Read email test cases from Excel file
     file_path = (
         Path(__file__).resolve().parents[4]
         / "data"
@@ -108,6 +109,7 @@ async def test_update_profile_with_email_field_only(
     verify_others,
     error_msg,
 ):
+    # Update email and verify API response and profile data
     api = APIs(api_request, access_token)
 
     allure.dynamic.title(case_name)

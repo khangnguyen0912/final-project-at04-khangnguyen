@@ -1,3 +1,4 @@
+import re
 from pathlib import Path
 import allure
 from openpyxl import load_workbook
@@ -7,6 +8,7 @@ from pages.my_profile_page import MyProfilePage
 from pages.sign_in_page import SignInPage
 
 def load_update_cases():
+    # Read UI update profile test cases from Excel file
     file_path = (
         Path(__file__).resolve().parents[2]
         / "data"
@@ -28,8 +30,6 @@ def load_update_cases():
         )
 
     cases = []
-    case_index = 0
-
     for row in ws.iter_rows(min_row=2, values_only=True):
         row_values = list(row)
         if len(row_values) < 11:
@@ -52,8 +52,7 @@ def load_update_cases():
         if not case_name:
             continue
 
-        case_index += 1
-        case_name = f"{case_index:02d}. {str(case_name).strip()}"
+        case_name = re.sub(r"^\s*\d+\.\s*", "", str(case_name).strip())
 
         normalized_values = []
         for value in (
@@ -170,6 +169,7 @@ def test_update_profile(
     login_new_success,
     login_old_success,
 ):
+    # Run one UI profile update case and verify expected result
     page = ui_page
 
     current_email = account_state.get("email")

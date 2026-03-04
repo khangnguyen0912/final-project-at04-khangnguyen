@@ -5,7 +5,7 @@ from api.api_list import APIs
 @allure.title("Verify that /api/me​ returns exactly user information after login successfully")
 @pytest.mark.asyncio
 async def test_get_me(api_request, access_token):
-
+    # Call /api/me and check returned user info
     with allure.step("Call GET /api/me"):
         res = await APIs(api_request, access_token).get_me()
         assert res.status == 200
