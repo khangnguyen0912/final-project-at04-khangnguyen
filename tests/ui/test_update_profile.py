@@ -6,6 +6,9 @@ import pytest
 from config import UI_TIMEOUT, STEP_PAUSE
 from pages.my_profile_page import MyProfilePage
 from pages.sign_in_page import SignInPage
+from utils.randoms import random_email
+
+RANDOM_EMAIL_PLACEHOLDER = "{{random_generated_email}}"
 
 def load_update_cases():
     # Read UI update profile test cases from Excel file
@@ -91,6 +94,9 @@ def load_update_cases():
             new_password,
             confirmation_password,
         ) = normalized_values
+
+        if isinstance(email, str) and email == RANDOM_EMAIL_PLACEHOLDER:
+            email = random_email()
 
         normalized_flags = []
         for value in (
@@ -196,6 +202,15 @@ def test_update_profile(
         my_profile_page.open_my_profile_page()
         assert my_profile_page.is_my_profile_page_loaded() is True
         page.wait_for_timeout(STEP_PAUSE)
+
+    if case_name == "Verify that user can reload My Profile page and the page still opens normally":
+        with allure.step("3. Reload My Profile page"):
+            my_profile_page.reload_page()
+            page.wait_for_timeout(STEP_PAUSE)
+
+        with allure.step("4. Verify My Profile page is still loaded"):
+            assert my_profile_page.is_my_profile_page_loaded() is True
+        return
 
     has_profile_input = any(value is not None for value in (name, email, phone))
     has_password_input = any(
