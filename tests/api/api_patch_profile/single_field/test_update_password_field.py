@@ -11,8 +11,10 @@ from helper.assertions import (
     assert_success_message,
     assert_validation_error,
 )
+from utils.randoms import random_password
 
 pw_timeout = 3000
+RANDOM_NEW_PASSWORD_PLACEHOLDER = "{{random_new_password}}"
 
 
 def load_password_cases():
@@ -50,13 +52,20 @@ def load_password_cases():
         normalized_password_values = []
         for value in (password_old, password):
             if isinstance(value, str):
-                upper = value.upper()
+                cleaned = value.strip()
+                if cleaned == RANDOM_NEW_PASSWORD_PLACEHOLDER:
+                    normalized_password_values.append(random_password())
+                    continue
+
+                upper = cleaned.upper()
                 if upper == "NULL":
                     normalized_password_values.append(None)
                     continue
                 if upper == "EMPTY":
                     normalized_password_values.append("")
                     continue
+                normalized_password_values.append(cleaned)
+                continue
             normalized_password_values.append(value)
 
         password_old, password = normalized_password_values

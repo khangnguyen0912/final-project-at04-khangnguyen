@@ -2,7 +2,6 @@ import re
 from datetime import datetime
 from pathlib import Path
 from playwright.sync_api import Page
-from config import UI_TIMEOUT
 
 class BasePage:
     def __init__(self, page: Page):

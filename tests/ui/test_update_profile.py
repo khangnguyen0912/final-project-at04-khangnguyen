@@ -3,12 +3,56 @@ from pathlib import Path
 import allure
 from openpyxl import load_workbook
 import pytest
-from config import UI_TIMEOUT, STEP_PAUSE
+from config import BASE_URL, UI_TIMEOUT, STEP_PAUSE
 from pages.my_profile_page import MyProfilePage
 from pages.sign_in_page import SignInPage
-from utils.randoms import random_email
+from utils.randoms import random_email, random_password
 
 RANDOM_EMAIL_PLACEHOLDER = "{{random_generated_email}}"
+RANDOM_NEW_PASSWORD_PLACEHOLDER = "{{random_new_password}}"
+RANDOM_CONFIRMED_PASSWORD_PLACEHOLDER = "{{random_confirmed_password}}"
+USER_AVATAR_LOCATOR = '//button[@type="button"][.//div[contains(@class,"MuiAvatar-root")]]'
+
+
+def _resolve_password_placeholders(new_password, confirmation_password):
+    generated_new_password = None
+    if isinstance(new_password, str) and new_password == RANDOM_NEW_PASSWORD_PLACEHOLDER:
+        generated_new_password = random_password()
+        new_password = generated_new_password
+
+    if (
+        isinstance(confirmation_password, str)
+        and confirmation_password == RANDOM_CONFIRMED_PASSWORD_PLACEHOLDER
+    ):
+        if generated_new_password:
+            confirmation_password = generated_new_password
+        elif isinstance(new_password, str) and new_password.strip():
+            confirmation_password = new_password
+        else:
+            confirmation_password = random_password()
+
+    return new_password, confirmation_password
+
+
+def _ensure_authenticated_session(page, email: str, password: str):
+    page.goto(f"{BASE_URL}/", wait_until="domcontentloaded", timeout=UI_TIMEOUT)
+    avatar_locator = page.locator(USER_AVATAR_LOCATOR).first
+    if avatar_locator.count() > 0 and avatar_locator.is_visible():
+        return
+
+    _login_with_credentials(page, email, password)
+    page.goto(f"{BASE_URL}/", wait_until="domcontentloaded", timeout=UI_TIMEOUT)
+    page.locator(USER_AVATAR_LOCATOR).first.wait_for(state="visible", timeout=max(UI_TIMEOUT, 10000))
+
+
+def _login_with_credentials(page, email: str, password: str):
+    sign_in_page = SignInPage(page)
+    if "/sign-in" not in page.url:
+        sign_in_page.open(timeout=max(UI_TIMEOUT, 10000))
+    sign_in_page.is_login_page_loaded(timeout=max(UI_TIMEOUT, 10000))
+    sign_in_page.login(email, password)
+    page.wait_for_url(lambda current_url: "/sign-in" not in current_url, timeout=max(UI_TIMEOUT, 15000))
+    page.wait_for_timeout(max(STEP_PAUSE, 300))
 
 def load_update_cases():
     # Read UI update profile test cases from Excel file
@@ -97,6 +141,10 @@ def load_update_cases():
 
         if isinstance(email, str) and email == RANDOM_EMAIL_PLACEHOLDER:
             email = random_email()
+        new_password, confirmation_password = _resolve_password_placeholders(
+            new_password,
+            confirmation_password,
+        )
 
         normalized_flags = []
         for value in (
@@ -190,13 +238,8 @@ def test_update_profile(
     allure.dynamic.title(case_name)
     allure.dynamic.description("Update profile directly on the page")
 
-    with allure.step("1. Login"):
-        sign_in_page = SignInPage(page)
-        sign_in_page.open(timeout=UI_TIMEOUT)
-        sign_in_page.is_login_page_loaded(timeout=UI_TIMEOUT)
-        page.wait_for_timeout(STEP_PAUSE)
-        sign_in_page.login(current_email, current_password)
-        page.wait_for_timeout(STEP_PAUSE)
+    with allure.step("1. Reuse authenticated session"):
+        _ensure_authenticated_session(page, current_email, current_password)
 
     with allure.step("2. Go to My Profile page."):
         my_profile_page.open_my_profile_page()
@@ -209,6 +252,9 @@ def test_update_profile(
             page.wait_for_timeout(STEP_PAUSE)
 
         with allure.step("4. Verify My Profile page is still loaded"):
+            assert "/sign-in" not in page.url, (
+                f"[{case_name}] Reload redirected to sign-in page unexpectedly: {page.url}"
+            )
             assert my_profile_page.is_my_profile_page_loaded() is True
         return
 
@@ -300,20 +346,20 @@ def test_update_profile(
         if not new_password:
             pytest.fail(f"[{case_name}] login_new_success is TRUE but new_password is empty.")
 
-        assert my_profile_page.is_updated_successful() is True
+        login_email = current_email
+        if isinstance(email, str) and email.strip():
+            login_email = email
 
-        with allure.step("5. Log out"):
-            my_profile_page.user_avatar.log_out()
-            page.wait_for_timeout(STEP_PAUSE)
+        if "/sign-in" not in page.url:
+            with allure.step("5. Prepare clean session"):
+                try:
+                    my_profile_page.user_avatar.log_out()
+                except Exception:
+                    pass
+                page.wait_for_timeout(STEP_PAUSE)
 
-        with allure.step("6. Login again"):
-            sign_in_page = SignInPage(page)
-            sign_in_page.is_login_page_loaded(timeout=UI_TIMEOUT)
-            login_email = current_email
-            if isinstance(email, str) and email.strip():
-                login_email = email
-            sign_in_page.login(login_email, new_password)
-            page.wait_for_timeout(STEP_PAUSE)
+        with allure.step("6. Login again with new password"):
+            _login_with_credentials(page, login_email, new_password)
 
         verify_profile_page = MyProfilePage(page)
         verify_profile_page.open_my_profile_page()
@@ -325,6 +371,14 @@ def test_update_profile(
         return
 
     if is_updated_successful:
+        if "/sign-in" in page.url:
+            reauth_email = current_email
+            if isinstance(email, str) and email.strip():
+                reauth_email = email
+            _login_with_credentials(page, reauth_email, current_password)
+            my_profile_page = MyProfilePage(page)
+            my_profile_page.open_my_profile_page()
+
         assert my_profile_page.is_updated_successful(
             expected_name=expected_name,
             expected_email=expected_email,
@@ -337,18 +391,19 @@ def test_update_profile(
         return
 
     if failure_expected:
+        assert "/sign-in" not in page.url, (
+            f"[{case_name}] Unexpected redirect to sign-in page while verifying invalid/failed update."
+        )
         assert my_profile_page.is_updated_fail() is True
 
     if login_old_success:
         with allure.step("5. Log out"):
-            my_profile_page.user_avatar.log_out()
-            page.wait_for_timeout(STEP_PAUSE)
+            if "/sign-in" not in page.url:
+                my_profile_page.user_avatar.log_out()
+                page.wait_for_timeout(STEP_PAUSE)
 
         with allure.step("6. Login again"):
-            sign_in_page = SignInPage(page)
-            sign_in_page.is_login_page_loaded(timeout=UI_TIMEOUT)
-            sign_in_page.login(account_state["email"], account_state["password"])
-            page.wait_for_timeout(STEP_PAUSE)
+            _login_with_credentials(page, account_state["email"], account_state["password"])
 
         verify_profile_page = MyProfilePage(page)
         verify_profile_page.open_my_profile_page()

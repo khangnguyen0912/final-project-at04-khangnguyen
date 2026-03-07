@@ -1,5 +1,3 @@
-import os
-from pathlib import Path
 from playwright.sync_api import Page, expect
 from config import BASE_URL, UI_TIMEOUT
 from pages.base_page import BasePage
@@ -10,6 +8,9 @@ class SignInPage(BasePage):
     _email_field = '//input[@name="email"]'
     _password_field = '//input[@name="password"]'
     _login_account_button = '//button[normalize-space()="Login account"]'
+    
+    _toast_error_invalid_password = '//p[text()="Invalid password."]'
+    _toast_error_user_not_found = '//p[text()="User not found."]'
 
     def __init__(self, page: Page):
         super().__init__(page)

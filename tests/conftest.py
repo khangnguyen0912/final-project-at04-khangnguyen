@@ -1,125 +1,44 @@
 import json
+import logging
 from pathlib import Path
 import pytest
-import requests
 from playwright.async_api import async_playwright
 from playwright.sync_api import sync_playwright
-from api.core.endpoints import LOGIN, REGISTER
+from api.core.endpoints import LOGIN
 from config import API_BASE_URL, DEFAULT_TIMEOUT, EMAIL, PASSWORD, UI_TIMEOUT
 from pages.base_page import BasePage
+from utils.logging_setup import configure_test_logging
+
+pytest_plugins = ("tests.pytest_hooks",)
 
 SCREENSHOTS_DIR = Path(__file__).resolve().parents[1] / "screenshots"
+LOGS_DIR = Path(__file__).resolve().parents[1] / "logs"
+LOGGER = logging.getLogger(__name__)
+BROWSER_VIEWPORT = {"width": 1920, "height": 1080}
 
 
-def _resolve_test_case_name(node):
+@pytest.fixture(scope="session", autouse=True)
+def configure_logging_for_test_session(request):
+    log_file_path = configure_test_logging(LOGS_DIR)
+    cleanup_result = getattr(request.config, "_screenshots_cleanup_result", None)
+    LOGGER.info("Test logging initialized: %s", log_file_path)
+    if cleanup_result is not None:
+        cleaned_dir, removed_items = cleanup_result
+        LOGGER.info("Cleared screenshots directory: %s (removed=%d)", cleaned_dir, removed_items)
+    yield
+    LOGGER.info("Test session finished.")
+
+
+def resolve_test_case_name(node):
     callspec = getattr(node, "callspec", None)
     if callspec is not None and getattr(callspec, "id", None):
         return str(callspec.id)
     return str(node.name)
 
+
 @pytest.fixture(scope="session")
 def account_state():
-    state = {"email": EMAIL, "password": PASSWORD}
-
-    if not API_BASE_URL or not EMAIL or not PASSWORD:
-        return state
-
-    base_url = API_BASE_URL.rstrip("/")
-    login_url = f"{base_url}{LOGIN}"
-    register_url = f"{base_url}{REGISTER}"
-    timeout_sec = max(DEFAULT_TIMEOUT, 5000) / 1000
-
-    def can_login(email: str, password: str) -> bool:
-        try:
-            response = requests.post(
-                login_url,
-                headers={"Content-Type": "application/json"},
-                data=json.dumps({"email": email, "password": password}),
-                timeout=timeout_sec,
-            )
-            body = response.json()
-        except Exception:
-            return False
-        token = body.get("accessToken") if isinstance(body, dict) else None
-        return bool(token)
-
-    if can_login(EMAIL, PASSWORD):
-        return state
-
-    # Try to recreate default account when credentials changed by earlier tests
-    register_payload = {
-        "name": "Automation User",
-        "email": EMAIL,
-        "password": PASSWORD,
-        "avatarUrl": "https://i.pinimg.com/736x/8f/0b/5c/8f0b5c33cf99d078cd8945492520b7e6.jpg",
-        "phone": "0990111222",
-        "address": "59 Ly Thai To, Phuong Vuon Lai, Thanh pho Ho Chi Minh",
-    }
-    try:
-        requests.post(
-            register_url,
-            headers={"Content-Type": "application/json"},
-            data=json.dumps(register_payload),
-            timeout=timeout_sec,
-        )
-    except Exception:
-        pass
-
-    if can_login(EMAIL, PASSWORD):
-        return state
-
-    for candidate in ("Kh@ng_qa1234", "Kh@ng_qa12345", "Kh@ng_qa123456", "Kh@ng_qa1995"):
-        if candidate == PASSWORD:
-            continue
-        if can_login(EMAIL, candidate):
-            state["password"] = candidate
-            break
-
-    return state
-
-
-@pytest.fixture(scope="function", autouse=True)
-def ensure_default_account_after_test_case():
-    yield
-
-    if not API_BASE_URL or not EMAIL or not PASSWORD:
-        return
-
-    base_url = API_BASE_URL.rstrip("/")
-    login_url = f"{base_url}{LOGIN}"
-    register_url = f"{base_url}{REGISTER}"
-    timeout_sec = max(DEFAULT_TIMEOUT, 5000) / 1000
-
-    try:
-        login_response = requests.post(
-            login_url,
-            headers={"Content-Type": "application/json"},
-            data=json.dumps({"email": EMAIL, "password": PASSWORD}),
-            timeout=timeout_sec,
-        )
-        login_body = login_response.json()
-        if isinstance(login_body, dict) and login_body.get("accessToken"):
-            return
-    except Exception:
-        pass
-
-    register_payload = {
-        "name": "Automation User",
-        "email": EMAIL,
-        "password": PASSWORD,
-        "avatarUrl": "https://i.pinimg.com/736x/8f/0b/5c/8f0b5c33cf99d078cd8945492520b7e6.jpg",
-        "phone": "0990111222",
-        "address": "59 Ly Thai To, Phuong Vuon Lai, Thanh pho Ho Chi Minh",
-    }
-    try:
-        requests.post(
-            register_url,
-            headers={"Content-Type": "application/json"},
-            data=json.dumps(register_payload),
-            timeout=timeout_sec,
-        )
-    except Exception:
-        pass
+    return {"email": EMAIL, "password": PASSWORD}
 
 
 @pytest.fixture(scope="function")
@@ -169,7 +88,7 @@ async def access_token(api_request, account_state):
 def ui_page(request):
     with sync_playwright() as playwright:
         browser = playwright.chromium.launch(headless=False)
-        context = browser.new_context(viewport={"width": 1920, "height": 1080})
+        context = browser.new_context(viewport=BROWSER_VIEWPORT)
         page = context.new_page()
         page.set_default_timeout(UI_TIMEOUT)
         page.set_default_navigation_timeout(UI_TIMEOUT)
@@ -185,17 +104,10 @@ def ui_page(request):
 
             if failed and not page.is_closed():
                 screenshot_path = BasePage(page).take_screenshot(
-                    _resolve_test_case_name(request.node),
+                    resolve_test_case_name(request.node),
                     folder=SCREENSHOTS_DIR,
                 )
-                print(f"\n[ui_page] Saved failure screenshot: {screenshot_path}")
+                LOGGER.error("Saved failure screenshot: %s", screenshot_path)
 
             context.close()
             browser.close()
-
-
-@pytest.hookimpl(tryfirst=True, hookwrapper=True)
-def pytest_runtest_makereport(item, call):
-    outcome = yield
-    report = outcome.get_result()
-    setattr(item, f"rep_{report.when}", report)
